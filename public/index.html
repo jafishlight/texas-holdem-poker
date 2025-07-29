@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>德州扑克 - 局域网联机</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 主菜单 -->
+    <div id="mainMenu" class="screen active">
+        <div class="menu-container">
+            <h1 class="game-title">德州扑克</h1>
+            
+            <!-- 昵称设置区域 -->
+            <div class="nickname-section">
+                <div class="form-group">
+                    <label for="mainPlayerName">玩家昵称:</label>
+                    <input type="text" id="mainPlayerName" placeholder="请输入您的昵称" maxlength="20" class="nickname-input">
+                </div>
+            </div>
+            
+            <div class="menu-buttons">
+                <button id="createRoomBtn" class="menu-btn primary">创建房间</button>
+                <button id="joinRoomBtn" class="menu-btn">加入房间</button>
+                <button id="discoverRoomsBtn" class="menu-btn">搜索房间</button>
+                <button id="settingsBtn" class="menu-btn">设置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建房间界面 -->
+    <div id="createRoomScreen" class="screen">
+        <div class="form-container">
+            <h2>创建房间</h2>
+            <form id="createRoomForm">
+                <div class="form-group">
+                    <label for="roomName">房间名称:</label>
+                    <input type="text" id="roomName" required maxlength="30">
+                </div>
+                <div class="form-group">
+                    <label for="initialChips">初始筹码:</label>
+                    <select id="initialChips">
+                        <option value="500">500</option>
+                        <option value="1000" selected>1000</option>
+                        <option value="2000">2000</option>
+                        <option value="5000">5000</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="smallBlind">小盲注:</label>
+                    <select id="smallBlind">
+                        <option value="5">5</option>
+                        <option value="10" selected>10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="maxPlayers">最大玩家数:</label>
+                    <select id="maxPlayers">
+                        <option value="2">2</option>
+                        <option value="4">4</option>
+                        <option value="6">6</option>
+                        <option value="8" selected>8</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
+                <div class="form-buttons">
+                    <button type="button" id="backToMenuBtn" class="btn secondary">返回</button>
+                    <button type="submit" class="btn primary">创建房间</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 加入房间界面 -->
+    <div id="joinRoomScreen" class="screen">
+        <div class="form-container">
+            <h2>加入房间</h2>
+            <form id="joinRoomForm">
+                <div class="form-group">
+                    <label for="roomCode">房间号:</label>
+                    <input type="text" id="roomCode" required pattern="[0-9]{6}" placeholder="6位数字房间号">
+                </div>
+                <div class="form-buttons">
+                    <button type="button" id="backToMenuBtn2" class="btn secondary">返回</button>
+                    <button type="submit" class="btn primary">加入房间</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 房间搜索界面 -->
+    <div id="discoverScreen" class="screen">
+        <div class="discover-container">
+            <h2>搜索局域网房间</h2>
+            <div class="discover-controls">
+                <button id="refreshRoomsBtn" class="btn primary">刷新</button>
+                <button id="backToMenuBtn3" class="btn secondary">返回</button>
+            </div>
+            <div id="roomsList" class="rooms-list">
+                <div class="loading">搜索中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 房间等待界面 -->
+    <div id="roomScreen" class="screen">
+        <div class="room-container">
+            <div class="room-header">
+                <h2 id="roomTitle">房间: </h2>
+                <div class="room-info">
+                    <span id="roomCodeDisplay">房间号: </span>
+                    <button id="roomSettingsBtn" class="btn secondary small">⚙️ 设置</button>
+                    <button id="leaveRoomBtn" class="btn secondary small">离开房间</button>
+                </div>
+            </div>
+            
+            <div class="room-content">
+                <div class="players-section">
+                    <h3>玩家列表</h3>
+                    <div id="playersList" class="players-list"></div>
+                </div>
+                
+                <div class="seat-reminder">
+                    <div class="reminder-text">
+                        <i class="reminder-icon">💺</i>
+                        <span>进入游戏界面选择座位，当有2名玩家坐下时游戏自动开始</span>
+                    </div>
+                </div>
+                
+                <div class="room-controls">
+                    <button id="enterGameBtn" class="btn primary">进入游戏界面</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 游戏界面 -->
+    <div id="gameScreen" class="screen">
+        <div class="game-container">
+            <!-- 牌桌区域 -->
+            <div class="table-area">
+                <!-- 游戏信息栏 -->
+                <div class="game-info">
+                    <div class="pot-info">
+                        <span class="label">奖池:</span>
+                        <span id="potAmount" class="amount">0</span>
+                    </div>
+                    <div class="bet-info">
+                        <span class="label">当前下注:</span>
+                        <span id="currentBet" class="amount">0</span>
+                    </div>
+                    <div class="game-stage">
+                        <span id="gameStage">等待开始</span>
+                    </div>
+                </div>
+
+                <!-- 公共牌区域 -->
+                <div class="community-cards">
+                    <div id="communityCard1" class="card-slot"></div>
+                    <div id="communityCard2" class="card-slot"></div>
+                    <div id="communityCard3" class="card-slot"></div>
+                    <div id="communityCard4" class="card-slot"></div>
+                    <div id="communityCard5" class="card-slot"></div>
+                </div>
+
+                <!-- 座位区域 -->
+                <div class="seats-container">
+                    <div id="seat1" class="seat pos-1" data-seat="1">
+                        <div class="seat-number">1</div>
+                        <div class="seat-content"></div>
+                    </div>
+                    <div id="seat2" class="seat pos-2" data-seat="2">
+                        <div class="seat-number">2</div>
+                        <div class="seat-content"></div>
+                    </div>
+                    <div id="seat3" class="seat pos-3" data-seat="3">
+                        <div class="seat-number">3</div>
+                        <div class="seat-content"></div>
+                    </div>
+                    <div id="seat4" class="seat pos-4" data-seat="4">
+                        <div class="seat-number">4</div>
+                        <div class="seat-content"></div>
+                    </div>
+                    <div id="seat5" class="seat pos-5" data-seat="5">
+                        <div class="seat-number">5</div>
+                        <div class="seat-content"></div>
+                    </div>
+                    <div id="seat6" class="seat pos-6" data-seat="6">
+                        <div class="seat-number">6</div>
+                        <div class="seat-content"></div>
+                    </div>
+                    <div id="seat7" class="seat pos-7" data-seat="7">
+                        <div class="seat-number">7</div>
+                        <div class="seat-content"></div>
+                    </div>
+                    <div id="seat8" class="seat pos-8" data-seat="8">
+                        <div class="seat-number">8</div>
+                        <div class="seat-content"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部控制区域 -->
+            <div class="bottom-controls">
+                <!-- 玩家手牌 -->
+                <div class="player-cards">
+                    <div id="playerCard1" class="player-card"></div>
+                    <div id="playerCard2" class="player-card"></div>
+                </div>
+
+                <!-- 操作区域 -->
+                <div class="action-area">
+                    <div class="bet-controls">
+                        <input type="range" id="betSlider" min="0" max="1000" value="0" class="bet-slider">
+                        <input type="number" id="betAmount" min="0" placeholder="下注金额" class="bet-input">
+                    </div>
+                    <div class="action-buttons">
+                        <button id="foldBtn" class="action-btn fold">弃牌</button>
+                        <button id="checkBtn" class="action-btn check">过牌</button>
+                        <button id="callBtn" class="action-btn call">跟注</button>
+                        <button id="raiseBtn" class="action-btn raise">加注</button>
+                        <button id="allInBtn" class="action-btn allin">全下</button>
+                    </div>
+                </div>
+            </div>
+
+
+        </div>
+    </div>
+
+    <!-- 设置界面 -->
+    <div id="settingsScreen" class="screen">
+        <div class="settings-container">
+            <h2>游戏设置</h2>
+            <div class="settings-content">
+                <div class="setting-group">
+                    <label for="soundEnabled">音效:</label>
+                    <input type="checkbox" id="soundEnabled" checked>
+                </div>
+                <div class="setting-group">
+                    <label for="musicEnabled">背景音乐:</label>
+                    <input type="checkbox" id="musicEnabled" checked>
+                </div>
+                <div class="setting-group">
+                    <label for="animationSpeed">动画速度:</label>
+                    <select id="animationSpeed">
+                        <option value="slow">慢</option>
+                        <option value="normal" selected>正常</option>
+                        <option value="fast">快</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <label for="cardTheme">卡牌主题:</label>
+                    <select id="cardTheme">
+                        <option value="classic" selected>经典</option>
+                        <option value="modern">现代</option>
+                        <option value="minimal">简约</option>
+                    </select>
+                </div>
+            </div>
+            <div class="settings-buttons">
+                <button id="backToMenuBtn4" class="btn secondary">返回</button>
+                <button id="saveSettingsBtn" class="btn primary">保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 游戏日志 -->
+    <div id="gameLog" class="game-log">
+        <div class="log-content" id="logContent">
+            <!-- 日志消息将在这里动态添加 -->
+        </div>
+    </div>
+
+    <!-- 确认对话框 -->
+    <div id="confirmDialog" class="modal hidden">
+        <div class="modal-content">
+            <h3 id="confirmTitle">确认</h3>
+            <p id="confirmMessage">确定要执行此操作吗？</p>
+            <div class="modal-buttons">
+                <button id="confirmCancel" class="btn secondary">取消</button>
+                <button id="confirmOk" class="btn primary">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 输入对话框 -->
+    <div id="inputDialog" class="modal hidden">
+        <div class="modal-content">
+            <h3 id="inputTitle">输入信息</h3>
+            <p id="inputMessage">请输入您的昵称:</p>
+            <input type="text" id="inputField" class="input-field" maxlength="20" placeholder="请输入昵称">
+            <div class="modal-buttons">
+                <button id="inputCancel" class="btn secondary">取消</button>
+                <button id="inputOk" class="btn primary">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 房间设置对话框 -->
+    <div id="roomSettingsDialog" class="modal hidden">
+        <div class="modal-content">
+            <h3>音效设置</h3>
+            <div class="settings-content">
+                <div class="setting-group">
+                    <label for="roomSoundEnabled">音效:</label>
+                    <input type="checkbox" id="roomSoundEnabled" checked>
+                </div>
+                <div class="setting-group">
+                    <label for="roomMusicEnabled">背景音乐:</label>
+                    <input type="checkbox" id="roomMusicEnabled" checked>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button id="roomSettingsCancel" class="btn secondary">取消</button>
+                <button id="roomSettingsOk" class="btn primary">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载中 -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-spinner"></div>
+        <p>连接中...</p>
+    </div>
+
+    <!-- 音频文件 -->
+    <audio id="backgroundMusic" loop preload="none">
+        <source src="audio/background.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="cardSound" preload="none">
+        <source src="audio/card.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="chipSound" preload="none">
+        <source src="audio/chip.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="winSound" preload="none">
+        <source src="audio/win.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- JavaScript -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>

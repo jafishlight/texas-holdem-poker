@@ -1,0 +1,97 @@
+{
+  "server": {
+    "port": 3000,
+    "udpPort": 8889,
+    "host": "0.0.0.0",
+    "corsOrigin": "*"
+  },
+  "game": {
+    "defaultSettings": {
+      "initialChips": 1000,
+      "smallBlind": 10,
+      "bigBlind": 20,
+      "maxPlayers": 10,
+      "minPlayers": 2
+    },
+    "limits": {
+      "maxRooms": 100,
+      "roomNameMaxLength": 30,
+      "playerNameMaxLength": 20,
+      "gameTimeout": 300000,
+      "actionTimeout": 30000
+    },
+    "features": {
+      "aiPlayers": true,
+      "spectatorMode": false,
+      "chatSystem": false,
+      "gameHistory": true,
+      "statistics": true
+    }
+  },
+  "ui": {
+    "themes": {
+      "default": "classic",
+      "available": ["classic", "modern", "minimal"]
+    },
+    "animations": {
+      "enabled": true,
+      "speed": "normal",
+      "cardDealDelay": 200,
+      "chipMoveDelay": 500
+    },
+    "audio": {
+      "enabled": true,
+      "backgroundMusic": true,
+      "soundEffects": true,
+      "volume": {
+        "master": 0.7,
+        "music": 0.5,
+        "effects": 0.8
+      }
+    }
+  },
+  "network": {
+    "discovery": {
+      "enabled": true,
+      "broadcastInterval": 5000,
+      "timeout": 10000
+    },
+    "reconnection": {
+      "enabled": true,
+      "attempts": 5,
+      "delay": 1000,
+      "delayMax": 5000
+    }
+  },
+  "security": {
+    "rateLimit": {
+      "enabled": true,
+      "windowMs": 60000,
+      "maxRequests": 100
+    },
+    "validation": {
+      "strictMode": true,
+      "sanitizeInput": true
+    }
+  },
+  "logging": {
+    "level": "info",
+    "file": {
+      "enabled": false,
+      "path": "./logs/poker.log",
+      "maxSize": "10MB",
+      "maxFiles": 5
+    },
+    "console": {
+      "enabled": true,
+      "colorize": true,
+      "timestamp": true
+    }
+  },
+  "development": {
+    "debug": false,
+    "hotReload": false,
+    "mockData": false,
+    "testMode": false
+  }
+}
