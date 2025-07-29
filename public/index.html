@@ -13,8 +13,18 @@
         <div class="menu-container">
             <h1 class="game-title">德州扑克</h1>
             
-            <!-- 昵称设置区域 -->
-            <div class="nickname-section">
+            <!-- 用户信息显示区域 -->
+            <div class="user-info">
+                <div class="user-details">
+                    <span class="username">加载中...</span>
+                    <span class="chips">筹码: --</span>
+                    <button id="mainSettingsBtn" class="settings-btn">⚙️ 设置</button>
+                    <button id="logoutBtn" class="logout-btn">退出登录</button>
+                </div>
+            </div>
+            
+            <!-- 昵称设置区域（隐藏，因为现在使用登录用户名） -->
+            <div class="nickname-section" style="display: none;">
                 <div class="form-group">
                     <label for="mainPlayerName">玩家昵称:</label>
                     <input type="text" id="mainPlayerName" placeholder="请输入您的昵称" maxlength="20" class="nickname-input">
@@ -82,7 +92,11 @@
             <form id="joinRoomForm">
                 <div class="form-group">
                     <label for="roomCode">房间号:</label>
-                    <input type="text" id="roomCode" required pattern="[0-9]{6}" placeholder="6位数字房间号">
+                    <input type="text" id="roomCode" required pattern="[A-Za-z0-9]{6}" placeholder="6位房间号">
+                </div>
+                <div class="form-group">
+                    <label for="joinChips">携带筹码:</label>
+                    <input type="number" id="joinChips" min="100" max="10000" value="1000" placeholder="携带筹码数量">
                 </div>
                 <div class="form-buttons">
                     <button type="button" id="backToMenuBtn2" class="btn secondary">返回</button>
@@ -141,6 +155,12 @@
     <!-- 游戏界面 -->
     <div id="gameScreen" class="screen">
         <div class="game-container">
+            <!-- 右上角控制按钮 -->
+            <div class="top-right-controls">
+                <button id="gameSettingsBtn" class="btn secondary small">⚙️ 设置</button>
+                <button id="leaveGameBtn" class="btn secondary small">退出游戏</button>
+            </div>
+            
             <!-- 牌桌区域 -->
             <div class="table-area">
                 <!-- 游戏信息栏 -->

@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>德州扑克 - 登录</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .login-header h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        
+        .login-header p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: bold;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-bottom: 1rem;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .switch-mode {
+            text-align: center;
+            margin-top: 1rem;
+        }
+        
+        .switch-mode a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        .switch-mode a:hover {
+            text-decoration: underline;
+        }
+        
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            border-left: 4px solid #c33;
+        }
+        
+        .success-message {
+            background: #efe;
+            color: #3c3;
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            border-left: 4px solid #3c3;
+        }
+        
+        .test-accounts {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 5px;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+        }
+        
+        .test-accounts h4 {
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        
+        .test-accounts p {
+            margin-bottom: 0.25rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>🃏 德州扑克</h1>
+            <p>登录您的账户开始游戏</p>
+        </div>
+        
+        <div id="message"></div>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">用户名</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="btn" id="loginBtn">登录</button>
+        </form>
+        
+        <div class="switch-mode">
+            <a href="#" id="switchToRegister">没有账户？点击注册</a>
+        </div>
+        
+        <div class="test-accounts">
+            <h4>测试账户</h4>
+            <p><strong>管理员:</strong> admin / admin123 (筹码: 100,000)</p>
+            <p><strong>玩家1:</strong> player1 / password123 (筹码: 5,000)</p>
+            <p><strong>玩家2:</strong> player2 / password123 (筹码: 3,000)</p>
+            <p><strong>玩家3:</strong> player3 / password123 (筹码: 2,000)</p>
+        </div>
+    </div>
+    
+    <!-- 注册表单（隐藏） -->
+    <div class="login-container" id="registerContainer" style="display: none;">
+        <div class="login-header">
+            <h1>🃏 德州扑克</h1>
+            <p>创建新账户</p>
+        </div>
+        
+        <div id="registerMessage"></div>
+        
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="regUsername">用户名</label>
+                <input type="text" id="regUsername" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regEmail">邮箱</label>
+                <input type="email" id="regEmail" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regPassword">密码</label>
+                <input type="password" id="regPassword" name="password" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regConfirmPassword">确认密码</label>
+                <input type="password" id="regConfirmPassword" name="confirmPassword" required>
+            </div>
+            
+            <button type="submit" class="btn" id="registerBtn">注册</button>
+        </form>
+        
+        <div class="switch-mode">
+            <a href="#" id="switchToLogin">已有账户？点击登录</a>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/api';
+        
+        // DOM 元素
+        const loginContainer = document.querySelector('.login-container');
+        const registerContainer = document.getElementById('registerContainer');
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+        const messageDiv = document.getElementById('message');
+        const registerMessageDiv = document.getElementById('registerMessage');
+        const switchToRegister = document.getElementById('switchToRegister');
+        const switchToLogin = document.getElementById('switchToLogin');
+        
+        // 切换登录/注册表单
+        switchToRegister.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginContainer.style.display = 'none';
+            registerContainer.style.display = 'block';
+        });
+        
+        switchToLogin.addEventListener('click', (e) => {
+            e.preventDefault();
+            registerContainer.style.display = 'none';
+            loginContainer.style.display = 'block';
+        });
+        
+        // 显示消息
+        function showMessage(message, type = 'error', container = messageDiv) {
+            container.innerHTML = `<div class="${type}-message">${message}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+        
+        // 登录处理
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(loginForm);
+            const loginData = {
+                username: formData.get('username'),
+                password: formData.get('password')
+            };
+            
+            const loginBtn = document.getElementById('loginBtn');
+            loginBtn.disabled = true;
+            loginBtn.textContent = '登录中...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(loginData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // 保存token
+                    localStorage.setItem('token', result.token);
+                    localStorage.setItem('user', JSON.stringify(result.user));
+                    
+                    showMessage('登录成功！正在跳转...', 'success');
+                    
+                    // 跳转到游戏页面
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    showMessage(result.message || '登录失败');
+                }
+            } catch (error) {
+                console.error('登录错误:', error);
+                showMessage('网络错误，请稍后重试');
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = '登录';
+            }
+        });
+        
+        // 注册处理
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(registerForm);
+            const password = formData.get('password');
+            const confirmPassword = formData.get('confirmPassword');
+            
+            if (password !== confirmPassword) {
+                showMessage('两次输入的密码不一致', 'error', registerMessageDiv);
+                return;
+            }
+            
+            const registerData = {
+                username: formData.get('username'),
+                email: formData.get('email'),
+                password: password
+            };
+            
+            const registerBtn = document.getElementById('registerBtn');
+            registerBtn.disabled = true;
+            registerBtn.textContent = '注册中...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(registerData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showMessage('注册成功！请登录', 'success', registerMessageDiv);
+                    
+                    // 切换到登录表单
+                    setTimeout(() => {
+                        registerContainer.style.display = 'none';
+                        loginContainer.style.display = 'block';
+                        document.getElementById('username').value = registerData.username;
+                    }, 1500);
+                } else {
+                    showMessage(result.message || '注册失败', 'error', registerMessageDiv);
+                }
+            } catch (error) {
+                console.error('注册错误:', error);
+                showMessage('网络错误，请稍后重试', 'error', registerMessageDiv);
+            } finally {
+                registerBtn.disabled = false;
+                registerBtn.textContent = '注册';
+            }
+        });
+        
+        // 检查是否已登录
+        const token = localStorage.getItem('token');
+        if (token) {
+            // 验证token是否有效
+            fetch(`${API_BASE}/auth/me`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // token有效，跳转到游戏页面
+                    window.location.href = '/';
+                } else {
+                    // token无效，清除本地存储
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                }
+            })
+            .catch(error => {
+                console.error('验证token错误:', error);
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+            });
+        }
+    </script>
+</body>
+</html>

@@ -21,10 +21,106 @@ class PokerGame {
 
     // 初始化游戏
     init() {
+        this.checkAuthentication();
         this.loadSettings();
-        this.initSocket();
         this.bindEvents();
-        this.showScreen('mainMenu');
+    }
+    
+    // 检查用户认证状态
+    async checkAuthentication() {
+        const token = localStorage.getItem('token');
+        const user = localStorage.getItem('user');
+        
+        if (!token || !user) {
+            // 未登录，跳转到登录页面
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        try {
+            // 验证token是否有效
+            const response = await fetch('/api/auth/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                this.currentUser = result.user;
+                this.updateUserDisplay();
+                this.initSocket();
+                this.showScreen('mainMenu');
+            } else {
+                // token无效，清除并跳转登录
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/login.html';
+            }
+        } catch (error) {
+            console.error('验证用户身份失败:', error);
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login.html';
+        }
+    }
+    
+    // 更新用户信息显示
+    updateUserDisplay() {
+        if (this.currentUser) {
+            // 更新主菜单中的用户信息
+            document.getElementById('mainPlayerName').value = this.currentUser.username;
+            document.getElementById('mainPlayerName').disabled = true;
+            
+            // 添加用户信息显示
+            const userInfoDiv = document.querySelector('.user-info');
+            if (userInfoDiv) {
+                userInfoDiv.innerHTML = `
+                    <div class="user-details">
+                        <span class="username">用户: ${this.currentUser.username}</span>
+                        <span class="chips">筹码: ${this.currentUser.totalChips}</span>
+                        <button id="logoutBtn" class="logout-btn">退出登录</button>
+                    </div>
+                `;
+                
+                // 绑定退出登录事件
+                document.getElementById('logoutBtn').addEventListener('click', () => {
+                    this.logout();
+                });
+            }
+        }
+    }
+    
+    // 退出登录
+    logout() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        if (this.socket) {
+            this.socket.disconnect();
+        }
+        window.location.href = '/login.html';
+    }
+    
+    // 刷新用户筹码信息
+    async refreshUserChips() {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/auth/chips', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.chipStatus) {
+                    this.currentUser.totalChips = result.chipStatus.totalChips;
+                    this.updateUserDisplay();
+                }
+            }
+        } catch (error) {
+            console.error('刷新筹码信息失败:', error);
+        }
     }
 
     // 加载设置
@@ -85,6 +181,9 @@ class PokerGame {
     }
 
     // 保存设置
+    /**
+     * 保存游戏设置并返回上一个页面
+     */
     saveSettings() {
         this.settings.soundEnabled = document.getElementById('soundEnabled').checked;
         this.settings.musicEnabled = document.getElementById('musicEnabled').checked;
@@ -94,21 +193,51 @@ class PokerGame {
         localStorage.setItem('pokerSettings', JSON.stringify(this.settings));
         this.applySettings();
         this.showToast('设置已保存', 'success');
+        
+        // 智能返回：根据之前的屏幕状态决定返回位置
+        // 检查是否有房间连接（无论游戏是否开始）
+        if (this.currentRoom) {
+            this.showScreen('gameScreen');
+        } else {
+            this.showScreen('mainMenu');
+        }
     }
 
     // 初始化Socket连接
     initSocket() {
-        this.socket = io();
+        const token = localStorage.getItem('token');
+        this.socket = io({
+            auth: {
+                token: token
+            }
+        });
         
         // 连接事件
         this.socket.on('connect', () => {
             console.log('已连接到服务器');
             this.hideLoading();
+            // 连接成功后刷新用户筹码信息
+            this.refreshUserChips();
+        });
+        
+        this.socket.on('connect_error', (error) => {
+            console.error('连接失败:', error.message);
+            if (error.message.includes('认证')) {
+                this.showToast('认证失败，请重新登录', 'error');
+                this.logout();
+            } else {
+                this.showToast('连接服务器失败', 'error');
+            }
         });
         
         this.socket.on('disconnect', () => {
             console.log('与服务器断开连接');
             this.showToast('与服务器断开连接', 'error');
+        });
+        
+        this.socket.on('error', (error) => {
+            console.error('Socket错误:', error);
+            this.showToast(error.message || '发生错误', 'error');
         });
         
         // 房间事件
@@ -378,7 +507,13 @@ class PokerGame {
         });
         
         document.getElementById('backToMenuBtn4').addEventListener('click', () => {
-            this.showScreen('mainMenu');
+            // 智能返回：根据之前的屏幕状态决定返回位置
+            // 检查是否有房间连接（无论游戏是否开始）
+            if (this.currentRoom) {
+                this.showScreen('gameScreen');
+            } else {
+                this.showScreen('mainMenu');
+            }
         });
         
         // 表单提交
@@ -399,6 +534,11 @@ class PokerGame {
         
         document.getElementById('leaveRoomBtn').addEventListener('click', () => {
             this.leaveRoom();
+        });
+        
+        // 游戏界面退出按钮
+        document.getElementById('leaveGameBtn').addEventListener('click', () => {
+            this.leaveGame();
         });
         
         // 游戏操作
@@ -504,6 +644,22 @@ class PokerGame {
         document.getElementById('roomSettingsCancel').addEventListener('click', () => {
             this.hideRoomSettings();
         });
+        
+        // 主页面设置按钮
+        document.getElementById('mainSettingsBtn').addEventListener('click', () => {
+            this.showScreen('settingsScreen');
+        });
+        
+        // 游戏界面设置按钮
+        const gameSettingsBtn = document.getElementById('gameSettingsBtn');
+        if (gameSettingsBtn) {
+            gameSettingsBtn.addEventListener('click', () => {
+                console.log('游戏设置按钮被点击');
+                this.showScreen('settingsScreen');
+            });
+        } else {
+            console.error('找不到gameSettingsBtn元素');
+        }
     }
 
     // 显示屏幕
@@ -516,23 +672,22 @@ class PokerGame {
 
     // 创建房间
     createRoom() {
-        const playerName = this.getCurrentPlayerName();
         const roomName = document.getElementById('roomName').value.trim();
         const initialChips = parseInt(document.getElementById('initialChips').value);
         const smallBlind = parseInt(document.getElementById('smallBlind').value);
         const maxPlayers = parseInt(document.getElementById('maxPlayers').value);
         
-        if (!playerName || !roomName) {
-            this.showToast('请填写完整信息', 'error');
+        if (!roomName) {
+            this.showToast('请填写房间名称', 'error');
             return;
         }
         
         this.showLoading();
         this.socket.emit('createRoom', {
             roomName,
-            playerName,
             settings: {
-                initialChips,
+                minChips: initialChips,
+                maxChips: initialChips * 10,
                 smallBlind,
                 bigBlind: smallBlind * 2,
                 maxPlayers
@@ -542,23 +697,23 @@ class PokerGame {
 
     // 加入房间
     joinRoom() {
-        const playerName = this.getCurrentPlayerName();
         const roomCode = document.getElementById('roomCode').value.trim();
+        const chipsToEnter = parseInt(document.getElementById('joinChips').value) || 1000;
         
-        if (!playerName || !roomCode) {
-            this.showToast('请填写完整信息', 'error');
+        if (!roomCode) {
+            this.showToast('请输入房间号', 'error');
             return;
         }
         
-        if (!/^\d{6}$/.test(roomCode)) {
-            this.showToast('房间号必须是6位数字', 'error');
+        if (!/^\w{6}$/.test(roomCode)) {
+            this.showToast('房间号格式不正确', 'error');
             return;
         }
         
         this.showLoading();
         this.socket.emit('joinRoom', {
             roomCode,
-            playerName
+            chipsToEnter
         });
     }
 
@@ -701,6 +856,20 @@ class PokerGame {
             this.currentRoom = null;
             this.gameState = null;
             this.showScreen('mainMenu');
+        });
+    }
+
+    // 退出游戏（游戏进行中）
+    leaveGame() {
+        this.showConfirm('确定要退出游戏吗？退出将视为弃牌，未参与下注的筹码将返回您的账户。', () => {
+            // 发送退出游戏事件到服务器
+            this.socket.emit('leaveGame');
+            this.currentRoom = null;
+            this.gameState = null;
+            this.showScreen('mainMenu');
+            this.showToast('已退出游戏，筹码已返还', 'success');
+            // 刷新用户筹码显示
+            this.refreshUserChips();
         });
     }
 

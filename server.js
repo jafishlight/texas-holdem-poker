@@ -1,9 +1,29 @@
+// 加载环境变量
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const dgram = require('dgram');
+const session = require('express-session');
+
+// 导入数据库和模型
+const Database = require('./config/database');
+const { authenticateSocket } = require('./middleware/auth');
+const ChipService = require('./services/chipService');
+const User = require('./models/User');
+const RoomBalance = require('./models/RoomBalance');
+const ChipTransaction = require('./models/ChipTransaction');
+
+// 导入路由
+const authRoutes = require('./routes/auth');
+const roomRoutes = require('./routes/room');
+
+// 初始化数据库和服务
+const database = require('./config/database');
+const chipService = require('./services/chipService');
 
 const app = express();
 const server = http.createServer(app);
@@ -14,8 +34,160 @@ const io = socketIo(server, {
   }
 });
 
+// Express中间件配置
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'texas_holdem_session_secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false } // 在生产环境中应设置为true（需要HTTPS）
+}));
+
 // 静态文件服务
 app.use(express.static(path.join(__dirname, 'public')));
+
+// API路由
+app.use('/api/auth', authRoutes);
+app.use('/api/room', roomRoutes);
+
+// 健康检查端点
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbHealth = await database.healthCheck();
+    res.json({
+      status: 'ok',
+      timestamp: new Date(),
+      database: dbHealth,
+      server: 'running'
+    });
+  
+  // 游戏结束处理（辅助函数）
+  async function finishGame(room) {
+    // 累积最后一轮的投入
+    room.players.forEach(player => {
+      if (!player.totalGameInvestment) player.totalGameInvestment = 0;
+      player.totalGameInvestment += (player.bet || 0);
+    });
+    
+    // 同步所有玩家的筹码到数据库
+    for (const [playerId, player] of room.players) {
+      try {
+        const playerData = players.get(playerId);
+        if (playerData && playerData.userId) {
+          await chipService.updateRoomChips(playerData.userId, room.code, player.chips);
+        }
+      } catch (error) {
+        console.error('同步玩家筹码错误:', error);
+      }
+    }
+    
+    // 移除筹码用完的玩家
+    const playersToRemove = [];
+    room.players.forEach((player, playerId) => {
+      if (player.chips <= 0 && player.id !== room.hostId) {
+        playersToRemove.push(playerId);
+        io.to(player.id).emit('playerEliminated', {
+          message: '您的筹码已用完，已被移出游戏'
+        });
+      }
+    });
+    
+    // 从房间中移除筹码用完的玩家
+    for (const playerId of playersToRemove) {
+      try {
+        const playerData = players.get(playerId);
+        if (playerData && playerData.userId) {
+          // 执行筹码转移（虽然筹码为0，但需要清理房间余额记录）
+          await chipService.exitRoom(playerData.userId, room.code);
+        }
+      } catch (error) {
+        console.error('移除玩家筹码处理错误:', error);
+      }
+      
+      // 释放座位
+      const seatNumber = room.playerSeats.get(playerId);
+      if (seatNumber) {
+        room.seats.delete(seatNumber);
+        room.playerSeats.delete(playerId);
+        io.to(room.code).emit('seatLeft', {
+          seatNumber,
+          playerId
+        });
+      }
+      
+      room.players.delete(playerId);
+      players.delete(playerId);
+    }
+    
+    // 重置游戏状态
+    room.gameState = GAME_STATES.WAITING;
+    room.communityCards = [];
+    room.pot = 0;
+    room.gameParticipants = null; // 清除本局游戏参与者记录
+    
+    // 检查是否还有足够坐下的玩家继续游戏
+    if (room.seats.size >= 2) {
+      // 3秒后自动开始新游戏
+      setTimeout(() => {
+        if (room.gameState === GAME_STATES.WAITING && room.seats.size >= 2) {
+          console.log(`房间 ${room.code} 游戏结束后自动开始新游戏，坐下玩家数: ${room.seats.size}`);
+          startNewGame(room);
+        } else {
+          // 玩家不足，通知房间状态
+          io.to(room.code).emit('roomUpdate', {
+            message: '需要至少2名玩家坐下才能开始游戏',
+            players: Array.from(room.players.values()).map(p => getPlayerInfo(p, room))
+          });
+        }
+      }, 3000);
+    } else {
+      // 玩家不足，通知房间状态
+      io.to(room.code).emit('roomUpdate', {
+        message: '需要至少2名玩家坐下才能开始游戏',
+        players: Array.from(room.players.values()).map(p => getPlayerInfo(p, room))
+      });
+    }
+  }
+  
+  // 继续游戏流程（辅助函数）
+  async function continueGame(room) {
+    // 检查是否需要进入下一阶段
+    if (isRoundComplete(room)) {
+      nextGameStage(room);
+    } else {
+      // 广播当前游戏状态
+      const activePlayers = Array.from(room.players.values())
+        .filter(p => room.gameParticipants.has(p.id) && !p.folded)
+        .sort((a, b) => {
+          const seatA = room.playerSeats.get(a.id);
+          const seatB = room.playerSeats.get(b.id);
+          return seatA - seatB;
+        });
+      
+      io.to(room.code).emit('gameStateUpdate', {
+        pot: room.pot,
+        currentBet: room.currentBet,
+        currentPlayer: getCurrentPlayer(room)?.id,
+        players: activePlayers.map(p => getPlayerInfo(p, room)),
+        allPlayers: Array.from(room.players.values()).map(p => getPlayerInfo(p, room)),
+        gameParticipants: Array.from(room.gameParticipants || []),
+        dealerIndex: room.dealerIndex,
+        smallBlindIndex: room.smallBlindIndex,
+        bigBlindIndex: room.bigBlindIndex,
+        bigBlind: room.settings.bigBlind,
+        smallBlind: room.settings.smallBlind
+      });
+    }
+  }
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      timestamp: new Date(),
+      error: error.message
+    });
+  }
+});
 
 // 游戏房间管理
 const rooms = new Map();
@@ -23,7 +195,7 @@ const players = new Map();
 
 // UDP广播服务用于局域网发现
 const udpServer = dgram.createSocket('udp4');
-const BROADCAST_PORT = 8890; // 修改端口避免冲突
+const BROADCAST_PORT = process.env.BROADCAST_PORT || 41234;
 const SERVER_PORT = process.env.PORT || 3000;
 
 // 扑克牌定义
@@ -101,10 +273,12 @@ function createRoom(roomName, hostId, settings) {
     smallBlindIndex: 0,
     bigBlindIndex: 0,
     settings: {
-      initialChips: settings.initialChips || 1000,
+      initialChips: settings.initialChips || parseInt(process.env.DEFAULT_CHIPS) || 1000,
+      minChips: settings.minChips || parseInt(process.env.MIN_ROOM_CHIPS) || 100,
+      maxChips: settings.maxChips || parseInt(process.env.MAX_ROOM_CHIPS) || 10000,
       smallBlind: settings.smallBlind || 10,
       bigBlind: settings.bigBlind || 20,
-      maxPlayers: settings.maxPlayers || 8 // 限制为8个座位
+      maxPlayers: settings.maxPlayers || 6
     },
     gameHistory: [],
     aiPlayers: []
@@ -255,86 +429,158 @@ function getCombinations(arr, k) {
 }
 
 // WebSocket连接处理
+// Socket.IO认证中间件
+io.use(authenticateSocket);
+
 io.on('connection', (socket) => {
-  console.log('玩家连接:', socket.id);
+  console.log('玩家连接:', socket.id, '用户:', socket.user.username);
   
   // 创建房间
-  socket.on('createRoom', (data) => {
-    const { roomName, playerName, settings } = data;
-    const room = createRoom(roomName, socket.id, settings);
-    
-    const player = {
-      id: socket.id,
-      name: playerName,
-      chips: room.settings.initialChips,
-      cards: [],
-      bet: 0,
-      folded: false,
-      allIn: false,
-      isReady: false
-    };
-    
-    room.players.set(socket.id, player);
-    players.set(socket.id, { roomCode: room.code, player });
-    
-    socket.join(room.code);
-    socket.emit('roomCreated', { roomCode: room.code, room: getRoomInfo(room) });
-    
-    console.log(`房间创建成功: ${room.code}`);
+  socket.on('createRoom', async (data) => {
+    try {
+      const { roomName, settings } = data;
+      const user = socket.user;
+      
+      // 检查用户筹码是否足够进入房间
+      const minChips = settings.minChips || 100;
+      if (user.totalChips < minChips) {
+        socket.emit('error', { 
+          message: '筹码余额不足，无法创建房间',
+          currentBalance: user.totalChips,
+          required: minChips
+        });
+        return;
+      }
+      
+      const room = createRoom(roomName, socket.id, settings);
+      
+      // 自动让房主进入房间（转移筹码）
+      const chipsToEnter = Math.min(user.totalChips, settings.maxChips || 10000);
+      const chipResult = await chipService.enterRoom(user._id, room.code, chipsToEnter);
+      
+      const player = {
+        id: socket.id,
+        userId: user._id,
+        name: user.username,
+        avatar: user.avatar,
+        chips: chipResult.roomChips,
+        totalChips: chipResult.totalChips,
+        cards: [],
+        bet: 0,
+        folded: false,
+        allIn: false,
+        isReady: false
+      };
+      
+      room.players.set(socket.id, player);
+      players.set(socket.id, { roomCode: room.code, player, userId: user._id });
+      
+      socket.join(room.code);
+      socket.emit('roomCreated', { 
+        roomCode: room.code, 
+        room: getRoomInfo(room),
+        chipStatus: chipResult
+      });
+      
+      console.log(`房间创建成功: ${room.code}, 房主: ${user.username}`);
+      
+    } catch (error) {
+      console.error('创建房间错误:', error);
+      socket.emit('error', { message: error.message });
+    }
   });
   
   // 加入房间
-  socket.on('joinRoom', (data) => {
-    const { roomCode, playerName } = data;
-    const room = rooms.get(roomCode);
-    
-    if (!room) {
-      socket.emit('error', { message: '房间不存在' });
-      return;
-    }
-    
-    if (room.players.size >= room.settings.maxPlayers) {
-      socket.emit('error', { message: '房间已满' });
-      return;
-    }
-    
-    const player = {
-      id: socket.id,
-      name: playerName,
-      chips: room.settings.initialChips,
-      cards: [],
-      bet: 0,
-      folded: false,
-      allIn: false,
-      isReady: false
-    };
-    
-    room.players.set(socket.id, player);
-    players.set(socket.id, { roomCode: room.code, player });
-    
-    socket.join(room.code);
-    socket.emit('joinedRoom', { room: getRoomInfo(room) });
-    
-    // 同步当前座位信息给新加入的玩家
-    console.log(`为新玩家 ${playerName} 同步座位信息，当前座位数量: ${room.seats.size}`);
-    if (room.seats.size > 0) {
-      room.seats.forEach((playerId, seatNumber) => {
-        const seatedPlayer = room.players.get(playerId);
-        if (seatedPlayer) {
-          console.log(`发送座位信息: 座位${seatNumber} - 玩家${seatedPlayer.name}`);
-          socket.emit('seatTaken', {
-            seatNumber,
-            player: getPlayerInfo(seatedPlayer, room)
-          });
-        }
+  socket.on('joinRoom', async (data) => {
+    try {
+      const { roomCode, chipsToEnter } = data;
+      const user = socket.user;
+      const room = rooms.get(roomCode);
+      
+      if (!room) {
+        socket.emit('error', { message: '房间不存在' });
+        return;
+      }
+      
+      if (room.players.size >= room.settings.maxPlayers) {
+        socket.emit('error', { message: '房间已满' });
+        return;
+      }
+      
+      // 检查用户筹码是否足够
+      const minChips = room.settings.minChips || 100;
+      const maxChips = room.settings.maxChips || 10000;
+      const actualChipsToEnter = chipsToEnter || Math.min(user.totalChips, maxChips);
+      
+      if (user.totalChips < minChips) {
+        socket.emit('error', { 
+          message: '筹码余额不足，无法加入房间',
+          currentBalance: user.totalChips,
+          required: minChips
+        });
+        return;
+      }
+      
+      if (actualChipsToEnter > user.totalChips) {
+        socket.emit('error', { 
+          message: '转入筹码数量超过余额',
+          currentBalance: user.totalChips,
+          requested: actualChipsToEnter
+        });
+        return;
+      }
+      
+      // 执行筹码转移
+      const chipResult = await chipService.enterRoom(user._id, room.code, actualChipsToEnter);
+      
+      const player = {
+        id: socket.id,
+        userId: user._id,
+        name: user.username,
+        avatar: user.avatar,
+        chips: chipResult.roomChips,
+        totalChips: chipResult.totalChips,
+        cards: [],
+        bet: 0,
+        folded: false,
+        allIn: false,
+        isReady: false
+      };
+      
+      room.players.set(socket.id, player);
+      players.set(socket.id, { roomCode: room.code, player, userId: user._id });
+      
+      socket.join(room.code);
+      socket.emit('joinedRoom', { 
+        room: getRoomInfo(room),
+        chipStatus: chipResult
       });
-    } else {
-      console.log('当前房间没有玩家坐下，无需同步座位信息');
+      
+      // 同步当前座位信息给新加入的玩家
+      console.log(`为新玩家 ${user.username} 同步座位信息，当前座位数量: ${room.seats.size}`);
+      if (room.seats.size > 0) {
+        room.seats.forEach((playerId, seatNumber) => {
+          const seatedPlayer = room.players.get(playerId);
+          if (seatedPlayer) {
+            console.log(`发送座位信息: 座位${seatNumber} - 玩家${seatedPlayer.name}`);
+            socket.emit('seatTaken', {
+              seatNumber,
+              player: getPlayerInfo(seatedPlayer, room)
+            });
+          }
+        });
+      } else {
+        console.log('当前房间没有玩家坐下，无需同步座位信息');
+      }
+      
+      io.to(room.code).emit('playerJoined', { player: getPlayerInfo(player, room) });
+      
+      console.log(`玩家 ${user.username} 加入房间 ${roomCode}，转入筹码: ${actualChipsToEnter}`);
+      
+    } catch (error) {
+      console.error('加入房间错误:', error);
+      socket.emit('error', { message: error.message });
     }
-    
-    io.to(room.code).emit('playerJoined', { player: getPlayerInfo(player, room) });
-    
-    console.log(`玩家 ${playerName} 加入房间 ${roomCode}`);
   });
   
   // 玩家准备
@@ -366,13 +612,18 @@ io.on('connection', (socket) => {
   });
   
   // 玩家操作
-  socket.on('playerAction', (data) => {
-    const { action, amount } = data;
-    const playerData = players.get(socket.id);
-    if (!playerData) return;
-    
-    const room = rooms.get(playerData.roomCode);
-    handlePlayerAction(room, socket.id, action, amount);
+  socket.on('playerAction', async (data) => {
+    try {
+      const { action, amount } = data;
+      const playerData = players.get(socket.id);
+      if (!playerData) return;
+      
+      const room = rooms.get(playerData.roomCode);
+      await handlePlayerAction(room, socket.id, action, amount);
+    } catch (error) {
+      console.error('玩家操作错误:', error);
+      socket.emit('error', { message: '操作失败' });
+    }
   });
   
   // 请求座位信息
@@ -403,12 +654,135 @@ io.on('connection', (socket) => {
   });
   
   // 离开房间
-  socket.on('leaveRoom', () => {
-    const playerData = players.get(socket.id);
-    if (!playerData) return;
-    
-    const room = rooms.get(playerData.roomCode);
-    if (room) {
+  socket.on('leaveRoom', async () => {
+    try {
+      const playerData = players.get(socket.id);
+      if (!playerData) return;
+      
+      const room = rooms.get(playerData.roomCode);
+      if (room) {
+        // 执行筹码转移回总筹码
+        const chipResult = await chipService.exitRoom(playerData.userId, room.code);
+        
+        // 释放座位
+        const seatNumber = room.playerSeats.get(socket.id);
+        if (seatNumber) {
+          room.seats.delete(seatNumber);
+          room.playerSeats.delete(socket.id);
+          io.to(room.code).emit('seatLeft', {
+            seatNumber,
+            playerId: socket.id
+          });
+        }
+        
+        room.players.delete(socket.id);
+        socket.leave(room.code);
+        
+        // 通知客户端筹码转移结果
+        socket.emit('leftRoom', {
+          chipStatus: chipResult,
+          message: '已退出房间，筹码已转回账户'
+        });
+        
+        io.to(room.code).emit('playerLeft', { playerId: socket.id });
+        
+        // 如果房主离开，转移房主权限
+        if (room.hostId === socket.id && room.players.size > 0) {
+          const newHost = Array.from(room.players.keys())[0];
+          room.hostId = newHost;
+          io.to(room.code).emit('hostChanged', { newHostId: newHost });
+        }
+        
+        // 如果房间为空，删除房间
+        if (room.players.size === 0) {
+          rooms.delete(room.code);
+        }
+        
+        console.log(`玩家离开房间 ${room.code}，转回筹码: ${chipResult.transferredChips}`);
+      }
+      players.delete(socket.id);
+    } catch (error) {
+      console.error('离开房间错误:', error);
+      socket.emit('error', { message: error.message });
+    }
+  });
+  
+  // 退出游戏（游戏进行中）
+  socket.on('leaveGame', async () => {
+    try {
+      const playerData = players.get(socket.id);
+      if (!playerData) return;
+      
+      const room = rooms.get(playerData.roomCode);
+      if (!room) return;
+      
+      const player = room.players.get(socket.id);
+      if (!player) return;
+      
+      // 如果游戏正在进行中，处理弃牌逻辑
+      if (room.gameState !== GAME_STATES.WAITING && room.gameParticipants && room.gameParticipants.has(socket.id)) {
+        // 标记玩家为弃牌状态
+        player.folded = true;
+        
+        // 通知其他玩家该玩家弃牌
+        io.to(room.code).emit('playerAction', {
+          playerId: socket.id,
+          action: 'fold',
+          playerName: player.name
+        });
+        
+        // 检查是否需要推进游戏流程
+        const activePlayers = Array.from(room.players.values())
+          .filter(p => room.gameParticipants.has(p.id) && !p.folded)
+          .sort((a, b) => {
+            const seatA = room.playerSeats.get(a.id);
+            const seatB = room.playerSeats.get(b.id);
+            return seatA - seatB;
+          });
+        
+        // 如果只剩一个玩家，结束游戏
+        if (activePlayers.length <= 1) {
+          if (activePlayers.length === 1) {
+            const winner = activePlayers[0];
+            winner.chips += room.pot;
+            
+            // 同步获胜者筹码到数据库
+            const winnerData = players.get(winner.id);
+            if (winnerData && winnerData.userId) {
+              await chipService.updateRoomChips(winnerData.userId, room.code, winner.chips);
+            }
+            
+            io.to(room.code).emit('gameResult', {
+              winner: {
+                id: winner.id,
+                name: winner.name,
+                winAmount: room.pot
+              },
+              reason: 'fold'
+            });
+            
+            // 发送游戏结束事件
+            io.to(room.code).emit('gameFinished', {
+              winner: {
+                id: winner.id,
+                name: winner.name,
+                winAmount: room.pot
+              },
+              reason: 'opponent_left'
+            });
+          }
+          
+          // 结束游戏
+          await finishGame(room);
+        } else {
+          // 继续游戏流程
+          await continueGame(room);
+        }
+      }
+      
+      // 执行筹码转移回总筹码（包含未参与下注的筹码）
+      const chipResult = await chipService.exitRoom(playerData.userId, room.code);
+      
       // 释放座位
       const seatNumber = room.playerSeats.get(socket.id);
       if (seatNumber) {
@@ -420,8 +794,16 @@ io.on('connection', (socket) => {
         });
       }
       
+      // 从房间中移除玩家
       room.players.delete(socket.id);
       socket.leave(room.code);
+      
+      // 通知客户端筹码转移结果
+      socket.emit('leftGame', {
+        chipStatus: chipResult,
+        message: '已退出游戏，筹码已转回账户'
+      });
+      
       io.to(room.code).emit('playerLeft', { playerId: socket.id });
       
       // 如果房主离开，转移房主权限
@@ -435,8 +817,15 @@ io.on('connection', (socket) => {
       if (room.players.size === 0) {
         rooms.delete(room.code);
       }
+      
+      players.delete(socket.id);
+      
+      console.log(`玩家退出游戏 ${room.code}，转回筹码: ${chipResult.transferredChips}`);
+      
+    } catch (error) {
+      console.error('退出游戏错误:', error);
+      socket.emit('error', { message: error.message });
     }
-    players.delete(socket.id);
   });
   
   // 选择座位
@@ -540,13 +929,21 @@ io.on('connection', (socket) => {
   });
   
   // 断线处理
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log('玩家断线:', socket.id);
     
     const playerData = players.get(socket.id);
     if (playerData) {
       const room = rooms.get(playerData.roomCode);
       if (room) {
+        try {
+          // 执行筹码转移回总筹码
+          const chipResult = await chipService.exitRoom(playerData.userId, room.code);
+          console.log(`断线玩家筹码转回: ${chipResult.transferredChips}`);
+        } catch (error) {
+          console.error('断线处理筹码转移错误:', error);
+        }
+        
         // 释放座位
         const seatNumber = room.playerSeats.get(socket.id);
         if (seatNumber) {
@@ -666,7 +1063,7 @@ function startNewGame(room) {
 }
 
 // 处理玩家操作
-function handlePlayerAction(room, playerId, action, amount = 0) {
+async function handlePlayerAction(room, playerId, action, amount = 0) {
   // 检查玩家是否参与本局游戏
   if (!room.gameParticipants || !room.gameParticipants.has(playerId)) {
     return; // 观战玩家不能参与游戏操作
@@ -787,6 +1184,17 @@ function handlePlayerAction(room, playerId, action, amount = 0) {
     // 只剩一个玩家，直接结束游戏
     showdown(room);
     return;
+  }
+  
+  // 同步筹码变化到数据库
+  try {
+    const playerData = players.get(playerId);
+    if (playerData && playerData.userId) {
+      const player = room.players.get(playerId);
+      await chipService.updateRoomChips(playerData.userId, room.code, player.chips);
+    }
+  } catch (error) {
+    console.error('同步筹码错误:', error);
   }
   
   // 广播游戏状态
@@ -1043,7 +1451,7 @@ function setCurrentPlayerForNewStage(room, activePlayers) {
 }
 
 // 摊牌
-function showdown(room) {
+async function showdown(room) {
   // 获取活跃玩家（按座位号排序）
   const activePlayers = Array.from(room.players.values())
     .filter(p => room.gameParticipants.has(p.id) && !p.folded)
@@ -1131,7 +1539,7 @@ function showdown(room) {
     players: activePlayers.map(p => getPlayerInfo(p, room))
   });
   
-  finishGame(room);
+  await finishGame(room);
 }
 
 // 分配边池
@@ -1236,12 +1644,24 @@ function createSidePotsFromTotalInvestment(players, playerTotalInvestment) {
 
 
 // 游戏结束处理
-function finishGame(room) {
+async function finishGame(room) {
   // 累积最后一轮的投入
   room.players.forEach(player => {
     if (!player.totalGameInvestment) player.totalGameInvestment = 0;
     player.totalGameInvestment += (player.bet || 0);
   });
+  
+  // 同步所有玩家的筹码到数据库
+  for (const [playerId, player] of room.players) {
+    try {
+      const playerData = players.get(playerId);
+      if (playerData && playerData.userId) {
+        await chipService.updateRoomChips(playerData.userId, room.code, player.chips);
+      }
+    } catch (error) {
+      console.error('同步玩家筹码错误:', error);
+    }
+  }
   
   // 移除筹码用完的玩家
   const playersToRemove = [];
@@ -1255,7 +1675,17 @@ function finishGame(room) {
   });
   
   // 从房间中移除筹码用完的玩家
-  playersToRemove.forEach(playerId => {
+  for (const playerId of playersToRemove) {
+    try {
+      const playerData = players.get(playerId);
+      if (playerData && playerData.userId) {
+        // 执行筹码转移（虽然筹码为0，但需要清理房间余额记录）
+        await chipService.exitRoom(playerData.userId, room.code);
+      }
+    } catch (error) {
+      console.error('移除玩家筹码处理错误:', error);
+    }
+    
     // 释放座位
     const seatNumber = room.playerSeats.get(playerId);
     if (seatNumber) {
@@ -1268,7 +1698,8 @@ function finishGame(room) {
     }
     
     room.players.delete(playerId);
-  });
+    players.delete(playerId);
+  }
   
   // 重置游戏状态
   room.gameState = GAME_STATES.WAITING;
@@ -1383,9 +1814,54 @@ udpServer.on('message', (msg, rinfo) => {
 udpServer.bind(BROADCAST_PORT);
 
 // 启动服务器
-server.listen(SERVER_PORT, () => {
-  console.log(`德州扑克服务器启动在端口 ${SERVER_PORT}`);
-  console.log(`UDP广播服务启动在端口 ${BROADCAST_PORT}`);
+async function startServer() {
+  try {
+    // 连接数据库
+    await database.connect();
+    console.log('数据库连接成功');
+    
+    // 启动HTTP服务器
+    server.listen(SERVER_PORT, () => {
+      console.log(`德州扑克服务器启动在端口 ${SERVER_PORT}`);
+      console.log(`UDP广播服务启动在端口 ${BROADCAST_PORT}`);
+      console.log(`游戏地址: http://localhost:${SERVER_PORT}`);
+      console.log(`API地址: http://localhost:${SERVER_PORT}/api`);
+    });
+    
+  } catch (error) {
+    console.error('服务器启动失败:', error);
+    process.exit(1);
+  }
+}
+
+// 优雅关闭
+process.on('SIGINT', async () => {
+  console.log('\n正在关闭服务器...');
+  
+  try {
+    await database.disconnect();
+    console.log('数据库连接已关闭');
+  } catch (error) {
+    console.error('关闭数据库连接失败:', error);
+  }
+  
+  process.exit(0);
 });
+
+process.on('SIGTERM', async () => {
+  console.log('\n正在关闭服务器...');
+  
+  try {
+    await database.disconnect();
+    console.log('数据库连接已关闭');
+  } catch (error) {
+    console.error('关闭数据库连接失败:', error);
+  }
+  
+  process.exit(0);
+});
+
+// 启动服务器
+startServer();
 
 module.exports = { app, server, io };
