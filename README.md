@@ -2,6 +2,8 @@
 
 一个基于 Node.js 和 WebSocket 的多人在线德州扑克游戏，支持实时对战和本地网络发现。
 
+AI编程学习，整着玩
+
 ## 功能特性
 
 ### 🎮 游戏核心功能
@@ -320,7 +322,6 @@ MIT License - 详见LICENSE文件
 
 如有问题或建议，请通过以下方式联系：
 - 提交GitHub Issue
-- 发送邮件至开发者 fishlights@qq.com
 
 ---
 
