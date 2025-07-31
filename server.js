@@ -20,10 +20,12 @@ const ChipTransaction = require('./models/ChipTransaction');
 // 导入路由
 const authRoutes = require('./routes/auth');
 const roomRoutes = require('./routes/room');
+const economyRoutes = require('./routes/economy');
 
 // 初始化数据库和服务
 const database = require('./config/database');
 const chipService = require('./services/chipService');
+const schedulerService = require('./services/schedulerService');
 
 const app = express();
 const server = http.createServer(app);
@@ -50,6 +52,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // API路由
 app.use('/api/auth', authRoutes);
 app.use('/api/room', roomRoutes);
+app.use('/api/economy', economyRoutes);
 
 // 健康检查端点
 app.get('/api/health', async (req, res) => {
@@ -993,6 +996,9 @@ function startNewGame(room) {
     player.bet = 0;
     player.totalGameInvestment = 0; // 重置累积投入
     player.cards = [];
+    player.initialChips = player.chips; // 记录游戏开始时的筹码数量
+    player.isWinner = false; // 重置获胜状态
+    player.handType = null; // 重置牌型
   });
   
   // 只有已选择座位的玩家才能参与游戏（不再需要准备状态检查）
@@ -1465,6 +1471,8 @@ async function showdown(room) {
   if (activePlayers.length === 1) {
     const winner = activePlayers[0];
     winner.chips += room.pot;
+    winner.isWinner = true;
+    winner.handType = null; // 无需摊牌，无牌型
     
     const gameResult = {
       winners: [{ 
@@ -1503,11 +1511,22 @@ async function showdown(room) {
   // 处理边池分配
   const potResults = distributePots(room, playerHands);
   
-  // 分配奖池给获胜者
+  // 分配奖池给获胜者并设置获胜状态
+  const winnerIds = new Set();
   potResults.forEach(result => {
     result.winners.forEach(winner => {
       winner.player.chips += winner.winAmount;
+      winner.player.isWinner = true;
+      winnerIds.add(winner.player.id);
     });
+  });
+  
+  // 为所有玩家设置牌型和获胜状态
+  playerHands.forEach(ph => {
+    ph.player.handType = ph.hand.type;
+    if (!winnerIds.has(ph.player.id)) {
+      ph.player.isWinner = false;
+    }
   });
   
   // 记录游戏历史
@@ -1651,15 +1670,41 @@ async function finishGame(room) {
     player.totalGameInvestment += (player.bet || 0);
   });
   
-  // 同步所有玩家的筹码到数据库
+  // 同步所有玩家的筹码到数据库并更新任务进度
   for (const [playerId, player] of room.players) {
     try {
       const playerData = players.get(playerId);
       if (playerData && playerData.userId) {
         await chipService.updateRoomChips(playerData.userId, room.code, player.chips);
+        
+        // 更新任务进度：完成1局游戏
+        await chipService.updateTaskProgress(playerData.userId, 'daily', 'complete_game', 1);
+        await chipService.updateTaskProgress(playerData.userId, 'growth', 'complete_10_games', 1);
+        
+        // 如果玩家获胜，更新胜利相关任务
+        if (player.isWinner) {
+          await chipService.updateTaskProgress(playerData.userId, 'daily', 'win_game', 1);
+          await chipService.updateTaskProgress(playerData.userId, 'growth', 'win_5_games', 1);
+          
+          // 更新累计赢得筹码任务
+          const winAmount = player.chips - (player.initialChips || 0);
+          if (winAmount > 0) {
+            await chipService.updateTaskProgress(playerData.userId, 'growth', 'earn_10000_chips', winAmount);
+          }
+        }
+        
+        // 检查牌型任务
+        if (player.handType) {
+          if (player.handType >= HAND_TYPES.FLUSH) {
+            await chipService.updateTaskProgress(playerData.userId, 'daily', 'achieve_flush', 1);
+          }
+          if (player.handType === HAND_TYPES.STRAIGHT_FLUSH || player.handType === HAND_TYPES.ROYAL_FLUSH) {
+            await chipService.updateTaskProgress(playerData.userId, 'growth', 'achieve_straight_flush', 1);
+          }
+        }
       }
     } catch (error) {
-      console.error('同步玩家筹码错误:', error);
+      console.error('同步玩家筹码或更新任务进度错误:', error);
     }
   }
   
@@ -1820,6 +1865,9 @@ async function startServer() {
     await database.connect();
     console.log('数据库连接成功');
     
+    // 启动定时任务服务
+    schedulerService.start();
+    
     // 启动HTTP服务器
     server.listen(SERVER_PORT, () => {
       console.log(`德州扑克服务器启动在端口 ${SERVER_PORT}`);
@@ -1838,6 +1886,9 @@ async function startServer() {
 process.on('SIGINT', async () => {
   console.log('\n正在关闭服务器...');
   
+  // 停止定时任务
+  schedulerService.stop();
+  
   try {
     await database.disconnect();
     console.log('数据库连接已关闭');
@@ -1850,6 +1901,9 @@ process.on('SIGINT', async () => {
 
 process.on('SIGTERM', async () => {
   console.log('\n正在关闭服务器...');
+  
+  // 停止定时任务
+  schedulerService.stop();
   
   try {
     await database.disconnect();

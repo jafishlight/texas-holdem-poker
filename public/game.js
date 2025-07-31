@@ -493,6 +493,49 @@ class PokerGame {
             this.showScreen('settingsScreen');
         });
         
+        // 任务中心按钮
+        document.getElementById('tasksBtn').addEventListener('click', () => {
+            this.showScreen('tasksScreen');
+            this.loadTasksData();
+        });
+        
+        // 排行榜按钮
+        document.getElementById('leaderboardBtn').addEventListener('click', () => {
+            this.showScreen('leaderboardScreen');
+            this.loadLeaderboardData();
+        });
+        
+        // 任务中心返回按钮
+        document.getElementById('backToMenuFromTasks').addEventListener('click', () => {
+            this.showScreen('mainMenu');
+        });
+        
+        // 排行榜返回按钮
+        document.getElementById('backToMenuFromLeaderboard').addEventListener('click', () => {
+            this.showScreen('mainMenu');
+        });
+        
+        // 签到按钮
+        document.getElementById('checkinBtn').addEventListener('click', () => {
+            this.performCheckin();
+        });
+        
+        // 任务标签切换
+        document.querySelectorAll('.task-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const taskType = e.target.dataset.type;
+                this.switchTaskTab(taskType);
+            });
+        });
+        
+        // 排行榜标签切换
+        document.querySelectorAll('.leaderboard-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const leaderboardType = e.target.dataset.type;
+                this.switchLeaderboardTab(leaderboardType);
+            });
+        });
+        
         // 返回按钮
         document.getElementById('backToMenuBtn').addEventListener('click', () => {
             this.showScreen('mainMenu');
@@ -1628,6 +1671,341 @@ class PokerGame {
         
         // 显示保存成功提示
         this.showToast('设置已保存', 'success');
+    }
+    
+    // 加载任务数据
+    async loadTasksData() {
+        try {
+            // 加载签到状态
+            await this.loadCheckinStatus();
+            
+            // 加载任务列表
+            await this.loadTasks('daily');
+        } catch (error) {
+            console.error('加载任务数据失败:', error);
+            this.showToast('加载任务数据失败', 'error');
+        }
+    }
+    
+    // 加载签到状态
+    async loadCheckinStatus() {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/economy/checkin/status', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    this.updateCheckinDisplay(data.data);
+                } else {
+                    throw new Error(data.message || '获取签到状态失败');
+                }
+            } else {
+                throw new Error('获取签到状态失败');
+            }
+        } catch (error) {
+            console.error('加载签到状态失败:', error);
+            document.getElementById('checkinStatus').textContent = '加载失败';
+        }
+    }
+    
+    // 更新签到显示
+    updateCheckinDisplay(data) {
+        const statusElement = document.getElementById('checkinStatus');
+        const rewardElement = document.getElementById('checkinReward');
+        const btnElement = document.getElementById('checkinBtn');
+        
+        if (data.canCheckin) {
+            statusElement.textContent = '今日未签到';
+            rewardElement.textContent = `奖励: ${data.nextReward} 筹码`;
+            btnElement.disabled = false;
+            btnElement.textContent = '签到';
+        } else {
+            statusElement.textContent = '今日已签到';
+            rewardElement.textContent = `连续签到: ${data.consecutiveDays} 天`;
+            btnElement.disabled = true;
+            btnElement.textContent = '已签到';
+        }
+    }
+    
+    // 执行签到
+    async performCheckin() {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/economy/checkin', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(data.message || `签到成功！获得 ${data.data.reward} 筹码`, 'success');
+                    await this.loadCheckinStatus();
+                    await this.refreshUserChips();
+                } else {
+                    this.showToast(data.message || '签到失败', 'error');
+                }
+            } else {
+                const error = await response.json();
+                this.showToast(error.message || '签到失败', 'error');
+            }
+        } catch (error) {
+            console.error('签到失败:', error);
+            this.showToast('签到失败', 'error');
+        }
+    }
+    
+    // 加载任务列表
+    async loadTasks(type = 'daily') {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`/api/economy/tasks?type=${type}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    this.displayTasks(data.data);
+                } else {
+                    throw new Error(data.message || '获取任务列表失败');
+                }
+            } else {
+                throw new Error('获取任务列表失败');
+            }
+        } catch (error) {
+            console.error('加载任务列表失败:', error);
+            this.showToast('加载任务列表失败', 'error');
+        }
+    }
+    
+    // 显示任务列表
+    displayTasks(tasks) {
+        const tasksList = document.getElementById('tasksList');
+        tasksList.innerHTML = '';
+        
+        if (tasks.length === 0) {
+            tasksList.innerHTML = '<div class="no-tasks">暂无任务</div>';
+            return;
+        }
+        
+        tasks.forEach(task => {
+            const taskElement = this.createTaskElement(task);
+            tasksList.appendChild(taskElement);
+        });
+    }
+    
+    // 创建任务元素
+    createTaskElement(task) {
+        const taskDiv = document.createElement('div');
+        taskDiv.className = `task-item ${task.isCompleted ? 'task-completed' : ''}`;
+        
+        const progressPercent = Math.min((task.progress / task.targetProgress) * 100, 100);
+        const canClaim = task.isCompleted && !task.isRewarded;
+        
+        taskDiv.innerHTML = `
+            <div class="task-header">
+                <div class="task-title">${task.taskName}</div>
+                <div class="task-reward">+${task.rewardChips} 筹码</div>
+            </div>
+            <div class="task-description">${task.taskDescription}</div>
+            <div class="task-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${progressPercent}%"></div>
+                </div>
+                <div class="progress-text">${task.progress}/${task.targetProgress}</div>
+            </div>
+            <div class="task-actions">
+                ${canClaim ? `<button class="claim-btn" onclick="game.claimTaskReward('${task._id}')">领取奖励</button>` : ''}
+                ${task.isRewarded ? '<span class="claimed-badge">已领取</span>' : ''}
+            </div>
+        `;
+        
+        return taskDiv;
+    }
+    
+    // 领取任务奖励
+    async claimTaskReward(taskId) {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`/api/economy/tasks/${taskId}/claim`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`成功领取 ${data.data.reward} 筹码奖励！`, 'success');
+                    // 刷新任务列表
+                    const activeTab = document.querySelector('.task-tab.active');
+                    const taskType = activeTab ? activeTab.dataset.type : 'daily';
+                    this.loadTasks(taskType);
+                    // 刷新用户筹码显示
+                    this.refreshUserChips();
+                } else {
+                    throw new Error(data.message || '领取奖励失败');
+                }
+            } else {
+                throw new Error('领取奖励失败');
+            }
+        } catch (error) {
+            console.error('领取任务奖励失败:', error);
+            this.showToast('领取奖励失败', 'error');
+        }
+    }
+    
+    // 切换任务标签
+    switchTaskTab(type) {
+        // 更新标签样式
+        document.querySelectorAll('.task-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelector(`[data-type="${type}"]`).classList.add('active');
+        
+        // 加载对应类型的任务
+        this.loadTasks(type);
+    }
+    
+    // 加载排行榜数据
+    async loadLeaderboardData() {
+        try {
+            // 加载我的排名
+            await this.loadMyRank();
+            
+            // 加载排行榜列表
+            await this.loadLeaderboard('total_chips');
+        } catch (error) {
+            console.error('加载排行榜数据失败:', error);
+            this.showToast('加载排行榜数据失败', 'error');
+        }
+    }
+    
+    // 加载我的排名
+    async loadMyRank() {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/economy/leaderboards/my-rank', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    this.updateMyRankDisplay(data.data);
+                } else {
+                    throw new Error(data.message || '获取我的排名失败');
+                }
+            } else {
+                throw new Error('获取我的排名失败');
+            }
+        } catch (error) {
+            console.error('加载我的排名失败:', error);
+            document.getElementById('myRankInfo').innerHTML = '<span class="rank-position">加载失败</span>';
+        }
+    }
+    
+    // 更新我的排名显示
+    updateMyRankDisplay(data) {
+        const rankInfo = document.getElementById('myRankInfo');
+        rankInfo.innerHTML = `
+            <span class="rank-position">第 ${data.rank} 名</span>
+            <span class="rank-chips">${data.value} 筹码</span>
+        `;
+    }
+    
+    // 加载排行榜
+    async loadLeaderboard(type = 'total_chips') {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`/api/economy/leaderboards?type=${type}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    this.displayLeaderboard(data.data.data || data.data);
+                } else {
+                    throw new Error(data.message || '获取排行榜失败');
+                }
+            } else {
+                throw new Error('获取排行榜失败');
+            }
+        } catch (error) {
+            console.error('加载排行榜失败:', error);
+            this.showToast('加载排行榜失败', 'error');
+        }
+    }
+    
+    // 显示排行榜
+    displayLeaderboard(leaderboard) {
+        const leaderboardList = document.getElementById('leaderboardList');
+        leaderboardList.innerHTML = '';
+        
+        if (leaderboard.length === 0) {
+            leaderboardList.innerHTML = '<div class="no-leaderboard">暂无排行榜数据</div>';
+            return;
+        }
+        
+        leaderboard.forEach((player, index) => {
+            const rank = index + 1;
+            const playerElement = this.createLeaderboardElement(player, rank);
+            leaderboardList.appendChild(playerElement);
+        });
+    }
+    
+    // 创建排行榜元素
+    createLeaderboardElement(player, rank) {
+        const playerDiv = document.createElement('div');
+        let className = 'leaderboard-item';
+        let rankClass = '';
+        
+        if (rank <= 3) {
+            className += ' top-3';
+            rankClass = `rank-${rank}`;
+            playerDiv.classList.add(rankClass);
+        }
+        
+        playerDiv.className = className;
+        
+        playerDiv.innerHTML = `
+            <div class="rank-info-left">
+                <div class="rank-number ${rankClass}">${rank}</div>
+                <div class="player-name">${player.username}</div>
+            </div>
+            <div class="player-chips">${player.value} 筹码</div>
+        `;
+        
+        return playerDiv;
+    }
+    
+    // 切换排行榜标签
+    switchLeaderboardTab(type) {
+        // 更新标签样式
+        document.querySelectorAll('.leaderboard-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelector(`[data-type="${type}"]`).classList.add('active');
+        
+        // 加载对应类型的排行榜
+        this.loadLeaderboard(type);
     }
 }
 

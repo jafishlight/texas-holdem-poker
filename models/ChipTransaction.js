@@ -20,7 +20,8 @@ const ChipTransactionSchema = new mongoose.Schema({
       'GAME_LOSS',         // 游戏失败
       'ADMIN_ADJUST',      // 管理员调整
       'DAILY_BONUS',       // 每日奖励
-      'PURCHASE'           // 购买筹码
+      'PURCHASE',          // 购买筹码
+      'task_reward'        // 任务奖励
     ],
     required: true
   },

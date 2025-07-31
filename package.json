@@ -17,6 +17,7 @@
     "express-session": "^1.18.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.5",
+    "node-cron": "^3.0.3",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.0"
   },

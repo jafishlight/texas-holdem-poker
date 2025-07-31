@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>德州扑克 - 局域网联机</title>
     <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <!-- 主菜单 -->
@@ -35,6 +34,8 @@
                 <button id="createRoomBtn" class="menu-btn primary">创建房间</button>
                 <button id="joinRoomBtn" class="menu-btn">加入房间</button>
                 <button id="discoverRoomsBtn" class="menu-btn">搜索房间</button>
+                <button id="tasksBtn" class="menu-btn">📋 任务中心</button>
+                <button id="leaderboardBtn" class="menu-btn">🏆 排行榜</button>
                 <button id="settingsBtn" class="menu-btn">设置</button>
             </div>
         </div>
@@ -346,6 +347,70 @@
     <div id="loadingOverlay" class="loading-overlay hidden">
         <div class="loading-spinner"></div>
         <p>连接中...</p>
+    </div>
+
+    <!-- 任务中心页面 -->
+    <div id="tasksScreen" class="screen">
+        <div class="tasks-container">
+            <div class="screen-header">
+                <h2>📋 任务中心</h2>
+                <button id="backToMenuFromTasks" class="back-btn">← 返回</button>
+            </div>
+            
+            <!-- 签到区域 -->
+            <div class="checkin-section">
+                <div class="checkin-card">
+                    <h3>📅 每日签到</h3>
+                    <div class="checkin-info">
+                        <span id="checkinStatus">加载中...</span>
+                        <span id="checkinReward"></span>
+                    </div>
+                    <button id="checkinBtn" class="checkin-btn" disabled>签到</button>
+                </div>
+            </div>
+            
+            <!-- 任务列表 -->
+            <div class="tasks-section">
+                <div class="tasks-tabs">
+                    <button class="task-tab active" data-type="daily">日常任务</button>
+                    <button class="task-tab" data-type="growth">成长任务</button>
+                </div>
+                <div id="tasksList" class="tasks-list">
+                    <!-- 任务列表将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 排行榜页面 -->
+    <div id="leaderboardScreen" class="screen">
+        <div class="leaderboard-container">
+            <div class="screen-header">
+                <h2>🏆 排行榜</h2>
+                <button id="backToMenuFromLeaderboard" class="back-btn">← 返回</button>
+            </div>
+            
+            <!-- 我的排名 -->
+            <div class="my-rank-section">
+                <div class="my-rank-card">
+                    <h3>我的排名</h3>
+                    <div id="myRankInfo" class="rank-info">
+                        <span class="rank-position">加载中...</span>
+                        <span class="rank-chips"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 排行榜列表 -->
+            <div class="leaderboard-section">
+                <div class="leaderboard-tabs">
+                    <button class="leaderboard-tab active" data-type="total_chips">总筹码榜</button>
+                </div>
+                <div id="leaderboardList" class="leaderboard-list">
+                    <!-- 排行榜列表将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 音频文件 -->
